@@ -214,5 +214,32 @@ if uploaded_file:
         if search_term:
             with st.spinner("Scanning document..."):
                 results = scan_document_for_keyword(uploaded_file, search_term, file_ext)
-               
+                if results:
+                    st.success(f"Found {len(results)} match(es) for '{search_term}':")
+                    for label, snippet in results:
+                        with st.expander(f"🔎 {label}"):
+                            st.write(snippet)
+                else:
+                    st.warning("No matches found.")
+
+    elif mode == "🤖 AI Chat":
+        if "last_uploaded_filename" not in st.session_state or uploaded_file.name != st.session_state.last_uploaded_filename:
+            with st.spinner("Processing document for AI..."):
+                docs = process_uploaded_file(uploaded_file)
+                if docs:
+                    retriever, chain = create_chain(docs)
+                    st.session_state.chain = chain
+                    st.session_state.retriever = retriever
+                    st.session_state.last_uploaded_filename = uploaded_file.name
+                    st.success("Document processed! Ask your question below:")
+
+        if st.session_state.chain:
+            user_question = st.text_input("Ask a question about your document:")
+            if user_question:
+                relevant_docs = st.session_state.retriever.get_relevant_documents(user_question)
+                answer = st.session_state.chain.run(input_documents=relevant_docs, question=user_question)
+                st.write("🤖", answer)
+
+    elif mode == "📅 Schedule Conflict Checker":
+        if
 
