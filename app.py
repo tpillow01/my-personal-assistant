@@ -241,5 +241,10 @@ if uploaded_file:
                 st.write("🤖", answer)
 
     elif mode == "📅 Schedule Conflict Checker":
-        if
+        if file_ext != "xlsx":
+            st.error("Please upload a valid Excel (.xlsx) schedule file.")
+        else:
+            detect_schedule_conflicts_and_reschedule(uploaded_file)
+else:
+    st.info("📤 Upload a document to get started.")
 
