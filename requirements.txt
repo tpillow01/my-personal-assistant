@@ -172,7 +172,7 @@ fpdf==1.7.2
 PyPDF2==1.26.0
 docx2txt==0.9
 openpyxl==3.0.10
-ortools==8.7.8  # Adjust version if necessary
+ortools==8.3.8   # Try using an older version if 8.7.8 fails
 langchain==0.0.135
 
 
