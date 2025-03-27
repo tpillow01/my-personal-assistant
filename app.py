@@ -5,6 +5,8 @@ import tempfile
 import PyPDF2
 import docx2txt
 import openpyxl
+import pandas as pd
+from datetime import datetime
 
 from langchain.chat_models import ChatOpenAI
 from langchain.chains.question_answering import load_qa_chain
@@ -13,7 +15,6 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 
-# Load environment variables
 load_dotenv()
 
 st.set_page_config(page_title="My Personal Assistant", layout="wide")
@@ -24,9 +25,9 @@ if "chain" not in st.session_state:
 
 uploaded_file = st.file_uploader("Upload a document (PDF, Word, Excel)", type=["pdf", "docx", "doc", "xlsx"])
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 🔍 Document Scanner (PDF: pages, Word: paragraphs, Excel: rows)
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+# 🔍 Document Scanner (PDF, Word, Excel)
+# ────────────────────────────────────────────────
 def scan_document_for_keyword(file, keyword, file_ext):
     results = []
 
@@ -62,9 +63,9 @@ def scan_document_for_keyword(file, keyword, file_ext):
 
     return results
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
 # 🤖 Langchain AI Q&A Mode
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
 def process_uploaded_file(uploaded_file):
     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
         tmp_file.write(uploaded_file.read())
@@ -98,10 +99,45 @@ def create_chain(_docs):
 
     return retriever, chain
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+# 📅 Schedule Conflict Checker
+# ────────────────────────────────────────────────
+def detect_schedule_conflicts(file):
+    df = pd.read_excel(file)
+    st.write("### Schedule Preview:")
+    st.dataframe(df)
+
+    if not {'Name', 'Start Time', 'End Time'}.issubset(df.columns):
+        st.error("Excel must include columns: Name, Start Time, End Time")
+        return
+
+    df['Start Time'] = pd.to_datetime(df['Start Time'])
+    df['End Time'] = pd.to_datetime(df['End Time'])
+
+    conflicts = []
+    grouped = df.sort_values('Start Time').groupby('Name')
+
+    for name, group in grouped:
+        for i in range(len(group)-1):
+            current = group.iloc[i]
+            next_row = group.iloc[i+1]
+            if current['End Time'] > next_row['Start Time']:
+                conflicts.append({
+                    'Name': name,
+                    'Conflict 1': f"{current['Start Time']} - {current['End Time']}",
+                    'Conflict 2': f"{next_row['Start Time']} - {next_row['End Time']}"
+                })
+
+    if conflicts:
+        st.warning("Conflicts detected:")
+        st.dataframe(pd.DataFrame(conflicts))
+    else:
+        st.success("✅ No conflicts found in the schedule!")
+
+# ────────────────────────────────────────────────
 # UI Mode Toggle + Logic
-# ─────────────────────────────────────────────────────────────────────────────
-mode = st.radio("Choose mode:", ["🔍 Document Scanner", "🤖 AI Chat"])
+# ────────────────────────────────────────────────
+mode = st.radio("Choose mode:", ["🔍 Document Scanner", "🤖 AI Chat", "📅 Schedule Conflict Checker"])
 
 if uploaded_file:
     file_ext = uploaded_file.name.split(".")[-1].lower()
@@ -119,7 +155,7 @@ if uploaded_file:
                 else:
                     st.warning("No matches found.")
 
-    else:
+    elif mode == "🤖 AI Chat":
         if "last_uploaded_filename" not in st.session_state or uploaded_file.name != st.session_state.last_uploaded_filename:
             with st.spinner("Processing document for AI..."):
                 docs = process_uploaded_file(uploaded_file)
@@ -136,6 +172,12 @@ if uploaded_file:
                 relevant_docs = st.session_state.retriever.get_relevant_documents(user_question)
                 answer = st.session_state.chain.run(input_documents=relevant_docs, question=user_question)
                 st.write("🤖", answer)
+
+    elif mode == "📅 Schedule Conflict Checker":
+        if file_ext != "xlsx":
+            st.error("Please upload a valid Excel (.xlsx) schedule file.")
+        else:
+            detect_schedule_conflicts(uploaded_file)
 else:
     st.info("📤 Upload a document to get started.")
 
