@@ -26,7 +26,7 @@ st.title("🤖 My Personal Assistant")
 st.markdown("Ask general questions, or upload a document for specialized assistance!")
 
 @st.cache_resource
-def create_chain(docs):
+def create_chain(_docs):
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     texts = splitter.split_documents(docs)
 
