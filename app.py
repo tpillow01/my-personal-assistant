@@ -156,8 +156,50 @@ def detect_schedule_conflicts_and_reschedule(file):
             df.at[index, 'End Time'] = str(solver.Value(variables[index]['end']))
         st.write("### Resolved Schedule:")
         st.dataframe(df)
+        
+        # Download buttons for Excel and PDF
+        download_excel(df)
+        download_pdf(df)
+        
     else:
         st.error("No solution found for conflicts.")
+
+# ────────────────────────────────────────────────
+# Download Options
+# ────────────────────────────────────────────────
+def download_excel(df):
+    # Save the resolved schedule to a new Excel file
+    file_path = "/mnt/data/optimized_schedule.xlsx"
+    df.to_excel(file_path, index=False)
+    st.download_button("Download Optimized Schedule (Excel)", file_path)
+
+def download_pdf(df):
+    # Convert the DataFrame to a PDF file
+    from fpdf import FPDF
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    
+    pdf.cell(200, 10, txt="Optimized Schedule", ln=True, align="C")
+    
+    # Add table headers
+    pdf.cell(40, 10, "Name", 1)
+    pdf.cell(50, 10, "Start Time", 1)
+    pdf.cell(50, 10, "End Time", 1)
+    pdf.ln()
+    
+    # Add rows
+    for index, row in df.iterrows():
+        pdf.cell(40, 10, row['Name'], 1)
+        pdf.cell(50, 10, str(row['Start Time']), 1)
+        pdf.cell(50, 10, str(row['End Time']), 1)
+        pdf.ln()
+    
+    # Save PDF
+    file_path = "/mnt/data/optimized_schedule.pdf"
+    pdf.output(file_path)
+    st.download_button("Download Optimized Schedule (PDF)", file_path)
 
 # ────────────────────────────────────────────────
 # UI Mode Toggle + Logic
@@ -172,37 +214,5 @@ if uploaded_file:
         if search_term:
             with st.spinner("Scanning document..."):
                 results = scan_document_for_keyword(uploaded_file, search_term, file_ext)
-                if results:
-                    st.success(f"Found {len(results)} match(es) for '{search_term}':")
-                    for label, snippet in results:
-                        with st.expander(f"🔎 {label}"):
-                            st.write(snippet)
-                else:
-                    st.warning("No matches found.")
-
-    elif mode == "🤖 AI Chat":
-        if "last_uploaded_filename" not in st.session_state or uploaded_file.name != st.session_state.last_uploaded_filename:
-            with st.spinner("Processing document for AI..."):
-                docs = process_uploaded_file(uploaded_file)
-                if docs:
-                    retriever, chain = create_chain(docs)
-                    st.session_state.chain = chain
-                    st.session_state.retriever = retriever
-                    st.session_state.last_uploaded_filename = uploaded_file.name
-                    st.success("Document processed! Ask your question below:")
-
-        if st.session_state.chain:
-            user_question = st.text_input("Ask a question about your document:")
-            if user_question:
-                relevant_docs = st.session_state.retriever.get_relevant_documents(user_question)
-                answer = st.session_state.chain.run(input_documents=relevant_docs, question=user_question)
-                st.write("🤖", answer)
-
-    elif mode == "📅 Schedule Conflict Checker":
-        if file_ext != "xlsx":
-            st.error("Please upload a valid Excel (.xlsx) schedule file.")
-        else:
-            detect_schedule_conflicts_and_reschedule(uploaded_file)
-else:
-    st.info("📤 Upload a document to get started.")
+               
 
