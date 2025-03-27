@@ -26,16 +26,18 @@ st.title("🤖 My Personal Assistant")
 st.markdown("Ask general questions, or upload a document for specialized assistance!")
 
 @st.cache_resource
-def create_chain(_docs):
+def create_chain(docs):
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    texts = splitter.split_documents(_docs)
-embeddings = OpenAIEmbeddings()
+    texts = splitter.split_documents(docs)
+
+    embeddings = OpenAIEmbeddings()
     db = FAISS.from_documents(texts, embeddings)
-    chain = ConversationalRetrievalChain.from_llm(
-        ChatOpenAI(temperature=0.2, model='gpt-3.5-turbo'),
-        retriever=db.as_retriever(),
-    )
-    return chain
+    retriever = db.as_retriever()
+
+    llm = ChatOpenAI(temperature=0)
+    chain = load_qa_chain(llm, chain_type="stuff")
+
+    return (retriever, chain)
 
 def process_uploaded_file(uploaded_file):
     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
