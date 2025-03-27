@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Personal Assistant</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            background-color: #007bff;
+            color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            color: #ffc107;
+        }
+        input, button {
+            padding: 10px;
+            margin: 10px;
+            width: 80%;
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>My Personal Assistant</h1>
+    <form id="chat-form">
+        <input type="file" name="file" id="fileInput"><br>
+        <input type="text" id="message" placeholder="Type your message..."><br>
+        <button type="submit">Send</button>
+    </form>
+
+    <h2>Response:</h2>
+    <pre id="response"></pre>
+
+    <script>
+        document.getElementById("chat-form").onsubmit = async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('fileInput').files[0];
+            const message = document.getElementById('message').value;
+            const formData = new FormData();
+            formData.append('message', message);
+            if (fileInput) formData.append('file', fileInput);
+
+            const res = await fetch('/chat', { method: 'POST', body: formData });
+            const data = await res.json();
+            document.getElementById('response').textContent = data.reply;
+        };
+    </script>
+</body>
+</html>
+
+
