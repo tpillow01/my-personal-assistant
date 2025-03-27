@@ -2,6 +2,9 @@ import streamlit as st
 from dotenv import load_dotenv
 import os
 import tempfile
+import PyPDF2
+import docx2txt
+import openpyxl
 
 from langchain.chat_models import ChatOpenAI
 from langchain.chains.question_answering import load_qa_chain
@@ -13,19 +16,55 @@ from langchain.vectorstores import FAISS
 # Load environment variables
 load_dotenv()
 
-# Set Streamlit page config
 st.set_page_config(page_title="My Personal Assistant", layout="wide")
-
-# Title
 st.title("📁 My Personal Assistant")
 
-# Session state for storing the AI chain
 if "chain" not in st.session_state:
     st.session_state.chain = None
 
-# Upload file
 uploaded_file = st.file_uploader("Upload a document (PDF, Word, Excel)", type=["pdf", "docx", "doc", "xlsx"])
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 🔍 Document Scanner (PDF: pages, Word: paragraphs, Excel: rows)
+# ─────────────────────────────────────────────────────────────────────────────
+def scan_document_for_keyword(file, keyword, file_ext):
+    results = []
+
+    if file_ext == "pdf":
+        reader = PyPDF2.PdfReader(file)
+        for page_num, page in enumerate(reader.pages):
+            try:
+                text = page.extract_text()
+                if keyword.lower() in text.lower():
+                    results.append((f"Page {page_num+1}", text[:500]))
+            except:
+                continue
+
+    elif file_ext in ["doc", "docx"]:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            tmp.write(file.read())
+            tmp_path = tmp.name
+        paragraphs = docx2txt.process(tmp_path).split("\n")
+        for idx, para in enumerate(paragraphs):
+            if keyword.lower() in para.lower():
+                results.append((f"Paragraph {idx+1}", para.strip()[:500]))
+
+    elif file_ext == "xlsx":
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(file.read())
+            tmp_path = tmp.name
+        wb = openpyxl.load_workbook(tmp_path, data_only=True)
+        for sheet in wb.worksheets:
+            for row in sheet.iter_rows(values_only=True):
+                row_text = " ".join([str(cell) for cell in row if cell])
+                if keyword.lower() in row_text.lower():
+                    results.append((f"Sheet: {sheet.title}", row_text.strip()[:500]))
+
+    return results
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🤖 Langchain AI Q&A Mode
+# ─────────────────────────────────────────────────────────────────────────────
 def process_uploaded_file(uploaded_file):
     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
         tmp_file.write(uploaded_file.read())
@@ -57,29 +96,46 @@ def create_chain(_docs):
     llm = ChatOpenAI(temperature=0)
     chain = load_qa_chain(llm, chain_type="stuff")
 
-    return (retriever, chain)
+    return retriever, chain
 
-# Process file and build chain
+# ─────────────────────────────────────────────────────────────────────────────
+# UI Mode Toggle + Logic
+# ─────────────────────────────────────────────────────────────────────────────
+mode = st.radio("Choose mode:", ["🔍 Document Scanner", "🤖 AI Chat"])
+
 if uploaded_file:
-    if "last_uploaded_filename" not in st.session_state or uploaded_file.name != st.session_state.last_uploaded_filename:
-        with st.spinner("Processing document..."):
-            docs = process_uploaded_file(uploaded_file)
-            if docs:
-                retriever, chain = create_chain(docs)
-                st.session_state.chain = chain
-                st.session_state.retriever = retriever
-                st.session_state.last_uploaded_filename = uploaded_file.name
-                st.success("✅ Document processed! You can now ask questions.")
-    else:
-        st.info("You're already working with this document.")
+    file_ext = uploaded_file.name.split(".")[-1].lower()
 
-# Ask questions
-if st.session_state.chain:
-    user_question = st.text_input("Ask me something about your document:")
-    if user_question:
-        relevant_docs = st.session_state.retriever.get_relevant_documents(user_question)
-        answer = st.session_state.chain.run(input_documents=relevant_docs, question=user_question)
-        st.write("🤖", answer)
+    if mode == "🔍 Document Scanner":
+        search_term = st.text_input("Enter a name or keyword to search for:")
+        if search_term:
+            with st.spinner("Scanning document..."):
+                results = scan_document_for_keyword(uploaded_file, search_term, file_ext)
+                if results:
+                    st.success(f"Found {len(results)} match(es) for '{search_term}':")
+                    for label, snippet in results:
+                        with st.expander(f"🔎 {label}"):
+                            st.write(snippet)
+                else:
+                    st.warning("No matches found.")
+
+    else:
+        if "last_uploaded_filename" not in st.session_state or uploaded_file.name != st.session_state.last_uploaded_filename:
+            with st.spinner("Processing document for AI..."):
+                docs = process_uploaded_file(uploaded_file)
+                if docs:
+                    retriever, chain = create_chain(docs)
+                    st.session_state.chain = chain
+                    st.session_state.retriever = retriever
+                    st.session_state.last_uploaded_filename = uploaded_file.name
+                    st.success("Document processed! Ask your question below:")
+
+        if st.session_state.chain:
+            user_question = st.text_input("Ask a question about your document:")
+            if user_question:
+                relevant_docs = st.session_state.retriever.get_relevant_documents(user_question)
+                answer = st.session_state.chain.run(input_documents=relevant_docs, question=user_question)
+                st.write("🤖", answer)
 else:
-    st.info("Upload a document to get started.")
+    st.info("📤 Upload a document to get started.")
 
