@@ -8,6 +8,7 @@ import openpyxl
 import pandas as pd
 from datetime import datetime, timedelta
 from ortools.sat.python import cp_model
+from fpdf import FPDF
 
 from langchain.chat_models import ChatOpenAI
 from langchain.chains.question_answering import load_qa_chain
@@ -175,7 +176,6 @@ def download_excel(df):
 
 def download_pdf(df):
     # Convert the DataFrame to a PDF file
-    from fpdf import FPDF
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -202,14 +202,58 @@ def download_pdf(df):
     st.download_button("Download Optimized Schedule (PDF)", file_path)
 
 # ────────────────────────────────────────────────
-# UI Mode Toggle + Logic
+# 📄 PDF Page Extraction Based on Route Name
 # ────────────────────────────────────────────────
-mode = st.radio("Choose mode:", ["🔍 Document Scanner", "🤖 AI Chat", "📅 Schedule Conflict Checker"])
+def extract_pdf_pages_by_route(file, route_name):
+    reader = PyPDF2.PdfReader(file)
+    writer = PyPDF2.PdfWriter()
+
+    found_pages = []
+    
+    # Iterate over all pages in the PDF
+    for page_num, page in enumerate(reader.pages):
+        try:
+            text = page.extract_text()
+            if text and route_name.lower() in text.lower():  # Check if route_name is in page text
+                found_pages.append(page_num)
+                writer.add_page(reader.pages[page_num])  # Add page to writer
+        except Exception as e:
+            continue
+
+    if found_pages:
+        # Save the extracted pages to a new PDF file
+        output_pdf = "/mnt/data/extracted_pages_by_route.pdf"
+        with open(output_pdf, "wb") as output_file:
+            writer.write(output_file)
+        return output_pdf, found_pages
+    else:
+        return None, None
+
+# ────────────────────────────────────────────────
+# UI Mode Logic: Allow users to choose route and extract pages
+# ────────────────────────────────────────────────
+mode = st.radio("Choose mode:", ["🔍 Document Scanner", "🤖 AI Chat", "📅 Schedule Conflict Checker", "📄 Extract PDF Pages by Route"])
 
 if uploaded_file:
     file_ext = uploaded_file.name.split(".")[-1].lower()
 
-    if mode == "🔍 Document Scanner":
+    if mode == "📄 Extract PDF Pages by Route":
+        if file_ext == "pdf":
+            # Ask user for the route name to search
+            route_name = st.text_input("Enter the route name or keyword to search for:")
+            if route_name:
+                with st.spinner(f"Searching for '{route_name}' in PDF..."):
+                    extracted_pdf, found_pages = extract_pdf_pages_by_route(uploaded_file, route_name)
+                    if extracted_pdf:
+                        st.success(f"Found {len(found_pages)} page(s) with '{route_name}'!")
+                        st.write(f"Pages Found: {', '.join(map(str, [page + 1 for page in found_pages]))}")  # Display page numbers (1-indexed)
+                        st.download_button("Download Extracted PDF", extracted_pdf)
+                    else:
+                        st.warning(f"No pages found with route name '{route_name}'.")
+        else:
+            st.error("Please upload a valid PDF file to extract pages.")
+    
+    elif mode == "🔍 Document Scanner":
         search_term = st.text_input("Enter a name or keyword to search for:")
         if search_term:
             with st.spinner("Scanning document..."):
