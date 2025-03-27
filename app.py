@@ -6,7 +6,8 @@ import PyPDF2
 import docx2txt
 import openpyxl
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
+from ortools.sat.python import cp_model
 
 from langchain.chat_models import ChatOpenAI
 from langchain.chains.question_answering import load_qa_chain
@@ -100,9 +101,9 @@ def create_chain(_docs):
     return retriever, chain
 
 # ────────────────────────────────────────────────
-# 📅 Schedule Conflict Checker
+# 📅 Schedule Conflict Checker & Auto-Rescheduling
 # ────────────────────────────────────────────────
-def detect_schedule_conflicts(file):
+def detect_schedule_conflicts_and_reschedule(file):
     df = pd.read_excel(file)
     st.write("### Schedule Preview:")
     st.dataframe(df)
@@ -114,25 +115,49 @@ def detect_schedule_conflicts(file):
     df['Start Time'] = pd.to_datetime(df['Start Time'])
     df['End Time'] = pd.to_datetime(df['End Time'])
 
-    conflicts = []
-    grouped = df.sort_values('Start Time').groupby('Name')
+    # User Input for Constraints
+    min_hours_between_shifts = st.number_input("Minimum hours between shifts:", min_value=0, max_value=12, value=2)
+    max_shifts_per_day = st.number_input("Maximum shifts per day:", min_value=1, max_value=5, value=3)
+    
+    # Constraint model setup
+    model = cp_model.CpModel()
+    variables = {}
 
-    for name, group in grouped:
-        for i in range(len(group)-1):
-            current = group.iloc[i]
-            next_row = group.iloc[i+1]
-            if current['End Time'] > next_row['Start Time']:
-                conflicts.append({
-                    'Name': name,
-                    'Conflict 1': f"{current['Start Time']} - {current['End Time']}",
-                    'Conflict 2': f"{next_row['Start Time']} - {next_row['End Time']}"
-                })
+    # Add variables for each shift (Start and End Time)
+    for index, row in df.iterrows():
+        shift_start = model.NewIntVar(0, 1000000, f"start_{index}")
+        shift_end = model.NewIntVar(0, 1000000, f"end_{index}")
+        variables[index] = {'start': shift_start, 'end': shift_end}
 
-    if conflicts:
-        st.warning("Conflicts detected:")
-        st.dataframe(pd.DataFrame(conflicts))
+    # Add constraints for no overlap: If a person has two shifts that overlap, raise an exception
+    for i, row1 in df.iterrows():
+        for j, row2 in df.iterrows():
+            if i >= j:
+                continue
+            if row1['Name'] == row2['Name']:
+                model.Add(variables[i]['end'] <= variables[j]['start'])  # No overlap
+
+                # Add minimum hours constraint between shifts
+                model.Add(variables[j]['start'] - variables[i]['end'] >= min_hours_between_shifts * 60)
+
+    # Max shifts per day constraint
+    for name, group in df.groupby('Name'):
+        for i, row in group.iterrows():
+            model.Add(sum(variables[idx]['start'] for idx in group.index) <= max_shifts_per_day)
+
+    # Solve the problem
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+
+    if status == cp_model.OPTIMAL:
+        st.success("Rescheduling completed successfully.")
+        for index in df.index:
+            df.at[index, 'Start Time'] = str(solver.Value(variables[index]['start']))
+            df.at[index, 'End Time'] = str(solver.Value(variables[index]['end']))
+        st.write("### Resolved Schedule:")
+        st.dataframe(df)
     else:
-        st.success("✅ No conflicts found in the schedule!")
+        st.error("No solution found for conflicts.")
 
 # ────────────────────────────────────────────────
 # UI Mode Toggle + Logic
@@ -177,7 +202,7 @@ if uploaded_file:
         if file_ext != "xlsx":
             st.error("Please upload a valid Excel (.xlsx) schedule file.")
         else:
-            detect_schedule_conflicts(uploaded_file)
+            detect_schedule_conflicts_and_reschedule(uploaded_file)
 else:
     st.info("📤 Upload a document to get started.")
 
