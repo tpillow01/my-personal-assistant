@@ -61,13 +61,17 @@ def create_chain(_docs):
 
 # Process file and build chain
 if uploaded_file:
-    with st.spinner("Processing document..."):
-        docs = process_uploaded_file(uploaded_file)
-        if docs:
-            retriever, chain = create_chain(docs)
-            st.session_state.chain = chain
-            st.session_state.retriever = retriever
-            st.success("Document processed! You can now ask questions.")
+    if "last_uploaded_filename" not in st.session_state or uploaded_file.name != st.session_state.last_uploaded_filename:
+        with st.spinner("Processing document..."):
+            docs = process_uploaded_file(uploaded_file)
+            if docs:
+                retriever, chain = create_chain(docs)
+                st.session_state.chain = chain
+                st.session_state.retriever = retriever
+                st.session_state.last_uploaded_filename = uploaded_file.name
+                st.success("✅ Document processed! You can now ask questions.")
+    else:
+        st.info("You're already working with this document.")
 
 # Ask questions
 if st.session_state.chain:
